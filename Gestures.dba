@@ -1,0 +1,486 @@
+#Constant INT_MAX 2147483647
+#Constant pointsPerStroke 32
+#Constant totalStrokes 10
+#Constant scaleSize 100.0
+
+`Display Stuff - Not relevant to algorithm
+#Constant halfSW Screen Width() / 2
+#Constant halfSH Screen Height() / 2
+
+drawDivideX As Float `(Screen Width() * 1.0) / (totalStrokes - 0.001)
+drawDivideX = Screen Width() / (totalStrokes + 0.0001)
+
+
+
+Sync On : Sync Rate 0
+
+
+Global Key_LB As Boolean = 0
+Global Key_SP As Boolean = 0
+Global Key_S As Boolean = 0
+Global Key_O As Boolean = 0
+Global Key_C As Boolean = 0
+
+
+`Our screen coords
+Type vec2
+   x As Integer
+   y As Integer
+EndType
+
+`An extra one for storing the dot product once a database submission is made
+Type vec3
+   x As Integer
+   y As Integer
+   dotProd As Float
+EndType
+
+
+`Our list of coords (Yes, a "List", not an array)
+Global Dim stroke(-1) As vec2
+
+`Our list of possible gestures
+`Unfortunatly, due to DBP's limitations, it is not possible to create a dynamic
+` (expandable and contractable) Array (ie, a List) that is more than 1D.
+` As such, we have to create a "Max Size" for the gestures.
+` total is easily changable via the constant definition
+Global Dim strokeDB(totalStrokes,pointsPerStroke) As vec3
+
+notDrawing As Boolean = 0
+
+Global currentTotalStrokes As Integer = 0
+
+match As Integer = -1
+
+offsetX As Integer
+offsetY As Integer
+
+
+Do
+
+   Cls
+
+
+   `Left Mouse Click
+   If MouseClick() = 1 : If Key_LB = 0 : Key_LB = 1
+   `** On KeyDown **
+      Empty Array stroke()
+      getStroke(1, MouseX(), MouseY())
+      notDrawing = 0
+   `** End On Down **
+   Else
+   `** While KeyHeld **
+      getStroke(0, MouseX(), MouseY())
+   `** End Held **
+   EndIf : Else : If Key_LB = 1 : Key_LB = 0
+   `** On KeyUp **
+      normalizeSize()
+      normalizeSpacing()
+      normalizeCenter()
+      match = findMatch()
+      notDrawing = 1
+   `** End On Up **
+   EndIf : EndIf
+
+
+   `SpaceBar
+   If SpaceKey() = 1 : If Key_SP = 0 : Key_SP = 1
+   `** On KeyDown **
+      If notDrawing
+         storeStroke()
+      EndIf
+   `** End On Down **
+   Else
+   `** While KeyHeld **
+
+   `** End Held **
+   EndIf : Else : If Key_SP = 1 : Key_SP = 0
+   `** On KeyUp **
+
+   `** End On Up **
+   EndIf : EndIf
+
+
+   `S Key
+   If KeyState(31) = 1 : If Key_S = 0 : Key_S = 1
+   `** On KeyDown **
+      If currentTotalStrokes <> 0
+         If File Exist("save.sav") Then Delete File "save.sav"
+         Open To Write 1, "save.sav"
+         Write Byte 1, currentTotalStrokes
+         For i = 0 To currentTotalStrokes - 1
+            Write Float 1, strokeDB(i,0).dotProd
+            For m = 0 To pointsPerStroke - 1
+               Write Long 1,strokeDB(i,m).x
+               Write Long 1,strokeDB(i,m).y
+            Next m
+         Next i
+         Close File 1
+      EndIf
+   `** End On Down **
+   Else
+   `** While KeyHeld **
+
+   `** End Held **
+   EndIf : Else : If Key_S = 1 : Key_S = 0
+   `** On KeyUp **
+
+   `** End On Up **
+   EndIf : EndIf
+
+
+   `O Key
+   If KeyState(24) = 1 : If Key_O = 0 : Key_O = 1
+   `** On KeyDown **
+      If File Exist("save.sav")
+         Open To Read 1, "save.sav"
+         Read Byte 1, currentTotalStrokes
+         For i = 0 To currentTotalStrokes - 1
+            Read Float 1, strokeDB(i,0).dotProd
+            For m = 0 To pointsPerStroke - 1
+               Read Long 1, strokeDB(i,m).x
+               Read Long 1, strokeDB(i,m).y
+            Next m
+         Next i
+         Close File 1
+      EndIf
+   `** End On Down **
+   Else
+   `** While KeyHeld **
+
+   `** End Held **
+   EndIf : Else : If Key_O = 1 : Key_O = 0
+   `** On KeyUp **
+
+   `** End On Up **
+   EndIf : EndIf
+
+
+   `C Key
+   If KeyState(46) = 1 : If Key_C = 0 : Key_C = 1
+   `** On KeyDown **
+      currentTotalStrokes = 0
+   `** End On Down **
+   Else
+   `** While KeyHeld **
+
+   `** End Held **
+   EndIf : Else : If Key_C = 1 : Key_C = 0
+   `** On KeyUp **
+
+   `** End On Up **
+   EndIf : EndIf
+
+
+   `Just display stuff
+   For i = 0 To Array Count(stroke()) - 2
+      Line stroke(i).x + (halfSW * notDrawing), stroke(i).y + (halfSH * notDrawing), stroke(i+1).x + (halfSW * notDrawing), stroke(i+1).y + (halfSH * notDrawing)
+      Ink RGB(200,0,0), 0
+      Dot stroke(i).x + (halfSW * notDrawing), stroke(i).y + (halfSH * notDrawing)
+      Ink RGB(255,255,255),0
+   Next i
+
+   offsetY = 150
+   For m = 0 To currentTotalStrokes - 1
+      Center Text offsetX, offsetY - (drawDivideX / 2) - 20, "#" + Str$(m)
+      offsetX = ((m+.5) * drawDivideX)
+      Ink RGB(200,0,0),0
+      Circle Int(((strokeDB(m,0).x * 1.0) / scaleSize) * drawDivideX) + offsetX, Int(((strokeDB(m,0).y * 1.0) / scaleSize) * drawDivideX) + offsetY, 2
+      Ink RGB(255,255,255),0
+      For i = 0 To pointsPerStroke - 2
+         Line Int(((strokeDB(m,i).x * 1.0) / scaleSize) * drawDivideX) + offsetX, Int(((strokeDB(m,i).y * 1.0) / scaleSize) * drawDivideX) + offsetY, Int(((strokeDB(m,i+1).x * 1.0) / scaleSize) * drawDivideX) + offsetX, Int(((strokeDB(m,i+1).y * 1.0) / scaleSize) * drawDivideX) + offsetY
+      Next i
+   Next m
+
+   Text 5,5,"Mouse = Draw a Gesture, O = Open Database file, S = Save Database file, C = Clear Database"
+   Text 5,20,"Press Space once drawn to store into Database"
+   Text 5,35," (max = " + Str$(totalStrokes) + ", current = " + str$(currentTotalStrokes) + ")"
+   If match >= 0
+      Text 5,50,"Match: Stored Gesture " + Str$(match + 1)
+   Else
+      Text 5,50,"Match: No Match"
+   EndIf
+
+FastSync
+Loop
+
+
+
+Function findMatch()
+
+   bestScore As Float
+   bestScoreIndex As Integer
+   score As Float
+   bestScoreIndex = -1
+   bestScore = -1.0
+
+   strokeDotProd As Float
+   Array Index To Top stroke()
+   While Array Index Valid(stroke())
+      `And the inner product of it with itself
+      strokeDotProd = strokeDotProd + (stroke().x * stroke().x) + (stroke().y * stroke().y)
+      Next Array Index stroke()
+   EndWhile
+
+   For m = 0 To currentTotalStrokes - 1
+      score = gestureDotProduct(m)
+      score = score / Sqrt(strokeDotProd * strokeDB(m,0).dotProd)
+      If score >= 0.0 And score > bestScore
+         bestScore = score
+         bestScoreIndex = m
+      EndIf
+   Next m
+
+EndFunction bestScoreIndex
+
+
+
+Function gestureDotProduct(index As Integer)
+
+   dotProd As Float
+
+   i As Integer
+   i = 0
+   Array Index To Top stroke()
+   While Array Index Valid(stroke()) AND i <= pointsPerStroke
+      `And the inner product of it with itself
+      dotProd = dotProd + (strokeDB(index,i).x * stroke().x) + (strokeDB(index,i).y * stroke().y)
+      Inc i
+      Next Array Index stroke()
+   EndWhile
+
+EndFunction dotProd
+
+
+
+Function storeStroke()
+
+   If Array Count(stroke()) <= 1 Then ExitFunction
+   If currentTotalStrokes = totalStrokes Then ExitFunction
+
+   dotProd As Float
+   i As Integer
+   i = 0
+   Array Index To Top stroke()
+   While i < pointsPerStroke
+      `Store the points
+      strokeDB(currentTotalStrokes,i).x = stroke().x
+      strokeDB(currentTotalStrokes,i).y = stroke().y
+      `And the inner product of it with itself
+      strokeDB(currentTotalStrokes,0).dotProd = strokeDB(currentTotalStrokes,0).dotProd + (stroke().x * stroke().x) + (stroke().y * stroke().y)
+      Inc i
+      Next Array Index stroke()
+   EndWhile
+
+   Inc currentTotalStrokes
+
+EndFunction
+
+
+
+
+Function getStroke(startStroke As Boolean, x As Integer, y As Integer)
+
+   If startStroke Then Array Index To Top stroke()
+
+   Next Array Index stroke()
+
+   If Array Index Valid(stroke()) = 0 Then Array Insert At Bottom stroke()
+
+   stroke().x = x
+   stroke().y = y
+
+EndFunction
+
+
+Function normalizeSize()
+
+   minX As Integer = INT_MAX
+   maxX As Integer = -INT_MAX
+   minY As Integer = INT_MAX
+   maxY As Integer = -INT_MAX
+
+   width As Float
+   height As Float
+
+   scale As Float
+
+   Array Index To Top stroke()
+   While Array Index Valid(stroke())
+
+      If minX > stroke().x Then minX = stroke().x
+      If minY > stroke().y Then minY = stroke().y
+      If maxX < stroke().x Then maxX = stroke().x
+      If maxY < stroke().y Then maxY = stroke().y
+
+      Next Array Index stroke()
+
+   EndWhile
+
+   width = maxX - minX
+   height = maxY - minY
+
+   If width > height Then scale = width Else scale = height
+   If scale = 0.0 Then ExitFunction
+
+   Array Index To Top stroke()
+   While Array Index Valid(stroke())
+
+      stroke().x = Int(stroke().x * 1.0 / scale * scaleSize)
+      stroke().y = Int(stroke().y * 1.0 / scale * scaleSize)
+
+      Next Array Index stroke()
+
+   EndWhile
+
+
+EndFunction
+
+
+Function getStrokeLength()
+
+   If Array Count(stroke()) <= 1 Then ExitFunction 0.0
+
+   Local length As Float
+   Local dx As Float
+   Local dy As Float
+   Local start As vec2
+
+   Array Index To Top stroke()
+
+   start = stroke()
+   Next Array Index stroke()
+
+   While Array Index Valid(stroke())
+
+      dx = (stroke().x * 1.0) - (start.x * 1.0)
+      dy = (stroke().y * 1.0) - (start.y * 1.0)
+
+      length = length + Sqrt((dx*dx) + (dy*dy))
+
+      start = stroke()
+
+      Next Array Index stroke()
+   EndWhile
+
+EndFunction length
+
+
+Function normalizeSpacing()
+
+   `Variables needed
+   Local newSegmentLen As Float
+   Local curSegmentLen As Float
+   Local endOldDist As Float
+   Local startOldDist As Float
+   Local newDist As Float
+   Local excess As Float
+   Local ratio As Float
+   Local dx As Float
+   Local dy As Float
+
+   Local startPt As vec2
+   Local endPt As vec2
+   Local newPt As vec2
+
+   `Temp List to store the normalSpaced points
+   Local Dim newStroke(0) As vec2
+
+   `Get the total length of the original stroke
+   newSegmentLen = getStrokeLength()
+
+   If Array Count(stroke()) <= 1 Or newSegmentLen <= 0.0 Then ExitFunction
+
+   `Average length per segment
+   newSegmentLen = newSegmentLen / (pointsPerStroke * 1.0)
+
+   `Go to the start of our Lists
+   Array Index To Top newStroke()
+   Array Index To Top stroke()
+
+   `Set the first point in the temp List to that of the first in the original List
+   newStroke() = stroke()
+
+   startPt = stroke()   `Ends of the current segment
+   endPt = stroke()     `(Begin with the empty Segment)
+
+   `Move along one in the original List
+   Next Array Index stroke()
+
+   `Infinate Loop (10000 itterations for a fail-safe)
+   For i = 0 To 10000
+
+      `Distance from our last new point
+      excess = endOldDist - newDist
+
+      `There's enough length, so add a point
+      If excess >= newSegmentLen
+         newDist = newDist + newSegmentLen                     `Tally the total distance traveled from the first point
+         ratio = (newDist - startOldDist) / curSegmentLen      `The ratio of the average length between points
+         newPt.x = (endPt.x - startPt.x) * ratio + startPt.x   `Determine the position of the new point based on these
+         newPt.y = (endPt.y - startPt.y) * ratio + startPt.y
+         Next Array Index newStroke()
+         If Not Array Index Valid(newStroke()) Then Array Insert At Bottom newStroke()
+         newStroke() = newPt                                   `And store that point
+      Else
+      `Not enough length yet, keep going through the points
+         If NOT Array Index Valid(stroke()) Then Exit `If we've reached the end of our points, stop the loop
+         startPt = endPt                              `The start Point is now the last End Point
+         endPt = stroke()                             `Get the next Point
+         Next Array Index stroke()                    `Go one forward in our stroke() List
+         dx = endPt.x - startPt.x                     `Distance between points
+         dy = endPt.y - startPt.y
+         curSegmentLen = Sqrt((dx*dx) + (dy*dy))      `The distance from this new Start Point to the new End Point
+         startOldDist = endOldDist                    `The distance so far up to the new 'Start Point'
+         endOldDist = endOldDist + curSegmentLen      `The distance so far up to the new 'End Point'
+      EndIf
+   Next i
+
+   `Floating point errors might mean we miss the last point
+   `So, add in that point to the new List
+   If Array Count(newStroke()) < pointsPerSrtoke
+      Next Array Index newStroke()
+      If Not Array Index Valid(newStroke()) Then Array Insert At Bottom newStroke()
+      newStroke() = endPt
+   EndIf
+
+   Empty Array stroke()             `Empty the original List
+   Array Insert At Bottom stroke()  `Add the first position
+   Array Index To Top stroke()      `Point the index at it
+   Array Index To Top newStroke()   `Reset the index of the new List
+
+   While Array Index Valid(newStroke())
+      stroke() = newStroke()           `Copy over the point
+      Next Array Index stroke()        `Move along one in the List
+      If Not Array Index Valid(stroke()) Then Array Insert At Bottom stroke() `Add a new element if need-be
+      Next Array Index newStroke()
+   EndWhile
+
+EndFunction
+
+
+Function normalizeCenter()
+
+   centerX As Integer = 0
+   centerY As Integer = 0
+
+   If Array Count(stroke()) = 0 Then ExitFunction
+
+   Array Index To Top stroke()
+   While Array Index Valid(stroke())
+      centerX = centerX + stroke().x
+      centerY = centerY + stroke().y
+      Next Array Index stroke()
+   EndWhile
+
+   centerX = centerX / Array Count(stroke())
+   centerY = centerY / Array Count(stroke())
+
+   Array Index To Top stroke()
+   While Array Index Valid(stroke())
+      stroke().x = stroke().x - centerX
+      stroke().y = stroke().y - centerY
+      Next Array Index stroke()
+   EndWhile
+
+EndFunction
